@@ -1,11 +1,11 @@
 {
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
-  "description": "Send selected code to a local Flowise + Ollama LLM agent from VS Code",
-  "version": "0.0.2",
+  "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
+  "version": "1.0.2",
   "publisher": "Dharnidhar",
   "engines": {
-    "vscode": "^1.100.2"
+    "vscode": "1.96.2"
   },
   "repository": {
     "type": "git",
@@ -14,6 +14,7 @@
   "license": "MIT",
   "icon": "images/icon.png",
   "categories": [
+    "Programming Languages",
     "Other"
   ],
   "keywords": [
@@ -22,18 +23,139 @@
     "LLM",
     "Flowise",
     "Ollama",
-    "coder",
-    "assistant"
+    "code review",
+    "coding assistant"
   ],
   "activationEvents": [
-    "onCommand:llmcoderagent.openChat"
+    "onCommand:llmcoderagent.openChat",
+    "onCommand:llmcoderagent.reviewProject",
+    "onCommand:llmcoderagent.reviewFile"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "LLMCoder Agent",
+      "properties": {
+        "llmcoderagent.flowiseUrl": {
+          "type": "string",
+          "default": "http://localhost:3000/api/v1/prediction/ccbfcde1-d3f3-40b2-9436-c3ba6b8a95a2",
+          "description": "URL of the Flowise API prediction endpoint (use HTTPS for production)."
+        },
+        "llmcoderagent.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Authentication token for the Flowise API (optional)."
+        },
+        "llmcoderagent.apiTimeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "Timeout for Flowise API requests in milliseconds.",
+          "minimum": 5000,
+          "maximum": 60000
+        },
+        "llmcoderagent.messageHistoryLimit": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of messages to retain in chat history.",
+          "minimum": 10,
+          "maximum": 500
+        },
+        "llmcoderagent.webviewTitle": {
+          "type": "string",
+          "default": "LLMCoder Chat",
+          "description": "Title of the chat webview panel.",
+          "maxLength": 50
+        },
+        "llmcoderagent.statusBarTimeout": {
+          "type": "number",
+          "default": 2000,
+          "description": "Duration of status bar messages in milliseconds.",
+          "minimum": 1000,
+          "maximum": 5000
+        },
+        "llmcoderagent.inputPlaceholder": {
+          "type": "string",
+          "default": "Ask the LLM something, type 'review project', or 'review file'...",
+          "description": "Placeholder text for the chat input field.",
+          "maxLength": 100
+        },
+        "llmcoderagent.autoScroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scroll to the latest message in the chat."
+        },
+        "llmcoderagent.useVsCodeTheme": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use VS Code theme colors for the webview."
+        },
+        "llmcoderagent.includePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.{ts,js,py,md}"
+          ],
+          "description": "Glob patterns for files to include in project review."
+        },
+        "llmcoderagent.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/*.log",
+            "**/*.lock"
+          ],
+          "description": "Glob patterns for files to exclude from project review."
+        },
+        "llmcoderagent.maxFileSize": {
+          "type": "number",
+          "default": 100000,
+          "description": "Maximum file size (in bytes) to review.",
+          "minimum": 1000,
+          "maximum": 1000000
+        },
+        "llmcoderagent.maxFiles": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum number of files to review in a project.",
+          "minimum": 10,
+          "maximum": 10000
+        },
+        "llmcoderagent.reviewBatchSize": {
+          "type": "number",
+          "default": 5,
+          "description": "Number of files to process in each batch during review.",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "llmcoderagent.autoApplyChanges": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically apply suggested changes to files (use with caution)."
+        }
+      }
+    },
     "commands": [
       {
         "command": "llmcoderagent.openChat",
-        "title": "💬 DU Open LLMCoder Chat",
+        "title": "💬 Open LLMCoder Chat",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.reviewProject",
+        "title": "📖 Review Project with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.reviewFile",
+        "title": "📖 Review Current File with LLMCoder",
         "category": "LLMCoder"
       }
     ],
@@ -42,7 +164,30 @@
         {
           "command": "llmcoderagent.openChat",
           "when": "editorHasSelection",
-          "group": "navigation"
+          "group": "LLMCoder@1"
+        },
+        {
+          "command": "llmcoderagent.reviewFile",
+          "when": "editorTextFocus",
+          "group": "LLMCoder@2"
+        },
+        {
+          "command": "llmcoderagent.reviewProject",
+          "group": "LLMCoder@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "llmcoderagent.openChat",
+          "when": "true"
+        },
+        {
+          "command": "llmcoderagent.reviewFile",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "llmcoderagent.reviewProject",
+          "when": "workspaceFolderCount > 0"
         }
       ]
     }
@@ -55,23 +200,29 @@
     "lint": "eslint src",
     "test": "vscode-test"
   },
- "files": [
-  "media/**",
-  "out/**",
-  "images/**"
-],
+  "files": [
+    "media/**",
+    "out/**",
+    "images/**"
+  ],
   "devDependencies": {
-    "vscode": "1.1.37",
+    "@types/jest": "^30.0.0",
+    "@types/minimatch": "^5.1.2",
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
-    "@typescript-eslint/eslint-plugin": "^8.31.1",
-    "@typescript-eslint/parser": "^8.31.1",
-    "eslint": "^9.25.1",
-    "typescript": "^5.8.3",
+    "@types/node": "^20.19.1",
+    "@types/sanitize-html": "^2.16.0",
+    "vscode": "^1.101.0",
+    "@typescript-eslint/eslint-plugin": "^8.34.1",
+    "@typescript-eslint/parser": "^8.34.1",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.29.0",
+    "minimatch": "^10.0.3",
+    "typescript": "^5.8.3",
+    "vscode": "^1.1.34"
   },
   "dependencies": {
-    "axios": "^1.6.8"
+    "axios": "^1.10.0",
+    "sanitize-html": "^2.17.0"
   }
 }

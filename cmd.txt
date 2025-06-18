@@ -1,3 +1,6 @@
+docker run -d --name flowise -p 3000:3000 flowiseai/flowise
+docker stop flowise
+http://host.docker.internal:11434
 Publisher Dharnidhar
 
 Token
