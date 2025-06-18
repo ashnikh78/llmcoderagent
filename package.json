@@ -1,0 +1,76 @@
+{
+  "name": "llmcoderagent",
+  "displayName": "LLMCoderAgent",
+  "description": "Send selected code to a local Flowise + Ollama LLM agent from VS Code",
+  "version": "0.0.1",
+  "publisher": "dharnidhar",
+  "engines": {
+    "vscode": "^1.100.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashnikh78/llmcoderagent.git"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "AI",
+    "chatbot",
+    "LLM",
+    "Flowise",
+    "Ollama",
+    "coder",
+    "assistant"
+  ],
+  "activationEvents": [
+    "onCommand:llmcoderagent.openChat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "llmcoderagent.openChat",
+        "title": "💬 DU Open LLMCoder Chat"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "llmcoderagent.openChat",
+          "when": "editorHasSelection",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+ "files": [
+  "media/**",
+  "out/**",
+  "images/**"
+],
+  "devDependencies": {
+    "vscode": "^1.100.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  },
+  "dependencies": {
+    "axios": "^1.6.8"
+  }
+}

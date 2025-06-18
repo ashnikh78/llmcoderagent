@@ -1,0 +1,36 @@
+# Node.js dependencies
+node_modules/
+
+# Compiled output
+out/
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# VS Code extension packaging
+*.vsix
+
+# Env files
+.env
+.env.*
+
+# Build cache
+.vscode-test/
+coverage/
+
+# VS Code workspace settings
+.vscode/
+
+# macOS system files
+*.DS_Store
+
+# Windows thumbnail cache
+ehthumbs.db
+Icon?
