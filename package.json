@@ -2,8 +2,8 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Send selected code to a local Flowise + Ollama LLM agent from VS Code",
-  "version": "0.0.1",
-  "publisher": "dharnidhar",
+  "version": "0.0.2",
+  "publisher": "Dharnidhar",
   "engines": {
     "vscode": "^1.100.2"
   },

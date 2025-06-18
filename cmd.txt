@@ -1,0 +1,18 @@
+Publisher Dharnidhar
+
+Token
+6yWzMbgz11pETarDmc06bl0xUVj1oQNYw6htwzBBWY923P8UMLpYJQQJ99BFACAAAAAAAAAAAAASAZDO3SCA
+
+vsce package
+code --install-extension llmcoderagent-0.0.1.vsix
+
+vsce login Dharnidhar
+vsce publish 
+vsce publish 0.0.2
+vsce publish --pre-release
+
+npm run compile
+vsce package
+code --install-extension llmcoderagent-0.0.1.vsix --force
+
+https://marketplace.visualstudio.com/manage/publishers/dharnidhar
