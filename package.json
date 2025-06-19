@@ -2,10 +2,10 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "publisher": "Dharnidhar",
   "engines": {
-    "vscode": "1.96.2"
+    "vscode": "^1.100.2"
   },
   "repository": {
     "type": "git",
@@ -38,7 +38,7 @@
       "properties": {
         "llmcoderagent.flowiseUrl": {
           "type": "string",
-          "default": "http://localhost:3000/api/v1/prediction/ccbfcde1-d3f3-40b2-9436-c3ba6b8a95a2",
+          "default": "http://localhost:3000/api/v1/prediction/cee111b6-eaf0-4b47-a6cb-4cdf77ec59da",
           "description": "URL of the Flowise API prediction endpoint (use HTTPS for production)."
         },
         "llmcoderagent.apiToken": {
@@ -196,7 +196,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run compile && npm run lint && node ./out/test/runTest.js",
     "lint": "eslint src",
     "test": "vscode-test"
   },
@@ -206,20 +206,23 @@
     "images/**"
   ],
   "devDependencies": {
+    "@angular/language-service": "^20.0.4",
     "@types/jest": "^30.0.0",
     "@types/minimatch": "^5.1.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.1",
     "@types/sanitize-html": "^2.16.0",
-    "vscode": "^1.101.0",
+    "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.29.0",
+    "jest": "^30.0.1",
     "minimatch": "^10.0.3",
+    "mocha": "^11.7.0",
     "typescript": "^5.8.3",
-    "vscode": "^1.1.34"
+    "vscode": "^1.1.37"
   },
   "dependencies": {
     "axios": "^1.10.0",

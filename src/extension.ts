@@ -1,3 +1,5 @@
+// --- VSCode Extension: LLMCoderAgent ---
+
 import * as vscode from 'vscode';
 import axios, { AxiosError } from 'axios';
 import { basename, extname } from 'path';
@@ -5,22 +7,7 @@ import { Uri } from 'vscode';
 import sanitizeHtml from 'sanitize-html';
 import { minimatch } from 'minimatch';
 
-
-
-
 const outputChannel = vscode.window.createOutputChannel('LLMCoderAgent');
-
-interface WebviewMessage {
-  command: string;
-  text: string;
-  fileUri?: string;
-}
-
-interface ChatMessage {
-  text: string;
-  from: 'user' | 'bot' | 'error';
-  timestamp: number;
-}
 
 interface FileReview {
   uri: vscode.Uri;
@@ -30,17 +17,22 @@ interface FileReview {
 }
 
 function shouldIncludeFile(uri: vscode.Uri, config: vscode.WorkspaceConfiguration): boolean {
-  const includePatterns = config.get<string[]>('includePatterns', ['**/*']);
-  const excludePatterns = config.get<string[]>('excludePatterns', [
-    '**/node_modules/**',
-    '**/.git/**',
-    '**/*.log',
-    '**/*.lock',
-  ]);
-  const relativePath = vscode.workspace.asRelativePath(uri);
-  const included = includePatterns.some(pattern => minimatch(relativePath, pattern));
-  const excluded = excludePatterns.some(pattern => minimatch(relativePath, pattern));
-  return included && !excluded;
+  try {
+    const includePatterns = config.get<string[]>('includePatterns', ['**/*']);
+    const excludePatterns = config.get<string[]>('excludePatterns', [
+      '**/node_modules/**',
+      '**/.git/**',
+      '**/*.log',
+      '**/*.lock'
+    ]);
+    const relativePath = vscode.workspace.asRelativePath(uri);
+    const included = includePatterns.some(pattern => minimatch(relativePath, pattern));
+    const excluded = excludePatterns.some(pattern => minimatch(relativePath, pattern));
+    return included && !excluded;
+  } catch (error) {
+    outputChannel.appendLine(`Error filtering file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return false;
+  }
 }
 
 async function readFileContent(uri: vscode.Uri): Promise<string> {
@@ -61,7 +53,9 @@ async function backupFile(uri: vscode.Uri): Promise<vscode.Uri> {
     outputChannel.appendLine(`Created backup: ${backupUri.fsPath}`);
     return backupUri;
   } catch (error) {
-    throw new Error(`Failed to create backup for ${uri.fsPath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const msg = `Failed to create backup: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    outputChannel.appendLine(msg);
+    throw new Error(msg);
   }
 }
 
@@ -73,57 +67,51 @@ async function applyFileChanges(uri: vscode.Uri, newContent: string): Promise<bo
 
     const original = uri;
     const modified = vscode.Uri.parse(`untitled:${uri.fsPath}.suggested`);
-    await vscode.workspace.openTextDocument(modified).then(doc => {
-      const edit = new vscode.WorkspaceEdit();
-      edit.insert(modified, new vscode.Position(0, 0), newContent);
-      return vscode.workspace.applyEdit(edit);
-    });
+    const doc = await vscode.workspace.openTextDocument(modified);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(modified, new vscode.Position(0, 0), newContent);
+    await vscode.workspace.applyEdit(edit);
 
     await vscode.commands.executeCommand('vscode.diff', original, modified, `${basename(uri.fsPath)}: Original vs Suggested`);
 
-    const apply = await vscode.window.showInformationMessage(
-      `Apply changes to ${basename(uri.fsPath)}?`,
-      'Apply',
-      'Cancel'
-    );
-
+    const apply = await vscode.window.showInformationMessage(`Apply changes to ${basename(uri.fsPath)}?`, 'Apply', 'Cancel');
     if (apply !== 'Apply') return false;
 
     await backupFile(uri);
-    const edit = new vscode.WorkspaceEdit();
-    const fullRange = new vscode.Range(
-      document.positionAt(0),
-      document.positionAt(currentContent.length)
-    );
-    edit.replace(uri, fullRange, newContent);
-    await vscode.workspace.applyEdit(edit);
+    const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(currentContent.length));
+    const finalEdit = new vscode.WorkspaceEdit();
+    finalEdit.replace(uri, fullRange, newContent);
+    await vscode.workspace.applyEdit(finalEdit);
     await document.save();
+
     outputChannel.appendLine(`Applied changes to ${uri.fsPath}`);
     return true;
   } catch (error) {
-    throw new Error(`Failed to apply changes to ${uri.fsPath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const msg = `Failed to apply changes to ${uri.fsPath}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    outputChannel.appendLine(msg);
+    vscode.window.showErrorMessage(msg);
+    return false;
   }
 }
 
 async function getLLMResponse(prompt: string, config: vscode.WorkspaceConfiguration): Promise<string> {
   try {
     const response = await axios.post<{ text: string }>(
-      config.get('flowiseUrl', 'http://localhost:3000/api/v1/prediction/ccbfcde1-d3f3-40b2-9436-c3ba6b8a95a2'),
+      config.get('flowiseUrl', ''),
       { question: prompt },
       {
         headers: {
           'Content-Type': 'application/json',
-          ...(config.get('apiToken') ? { Authorization: `Bearer ${config.get('apiToken')}` } : {}),
+          ...(config.get('apiToken') ? { Authorization: `Bearer ${config.get('apiToken')}` } : {})
         },
-        timeout: config.get('apiTimeout', 30000),
+        timeout: config.get('apiTimeout', 30000)
       }
     );
 
     const sanitized = sanitizeHtml(response.data.text, {
       allowedTags: [],
-      allowedAttributes: {},
+      allowedAttributes: {}
     });
-
     return sanitized || 'No response received from LLM';
   } catch (error) {
     const message = `Failed to fetch LLM response: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -144,11 +132,19 @@ async function reviewFile(uri: vscode.Uri, config: vscode.WorkspaceConfiguration
     return {
       uri,
       content,
-      review: `File too large to review (size: ${content.length} bytes, max: ${maxFileSize} bytes)`,
+      review: `File too large to review (size: ${content.length} bytes, max: ${maxFileSize} bytes)`
     };
   }
 
-  const prompt = `Review the following file content and suggest improvements:\n\n**File**: ${basename(uri.fsPath)}\n**Content**:\n\`\`\`${extname(uri.fsPath).slice(1)}\n${content}\n\`\`\`\n\nProvide a review and, if applicable, include a "Suggested changes:" section with the full modified content.`;
+ const prompt = `Review the following file content and suggest improvements:
+
+**File**: ${basename(uri.fsPath)}
+**Content**:
+\`\`\`${extname(uri.fsPath).slice(1)}
+${content}
+\`\`\`
+
+Provide a review and, if applicable, include a "Suggested changes:" section with the full modified content.`;
 
   try {
     const review = await getLLMResponse(prompt, config);
@@ -157,13 +153,13 @@ async function reviewFile(uri: vscode.Uri, config: vscode.WorkspaceConfiguration
       uri,
       content,
       review,
-      suggestedChanges: suggestedChangesMatch ? suggestedChangesMatch[1].trim() : undefined,
+      suggestedChanges: suggestedChangesMatch ? suggestedChangesMatch[1].trim() : undefined
     };
   } catch (error) {
     return {
       uri,
       content,
-      review: `Error reviewing file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      review: `Error reviewing file: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
   }
 }
@@ -177,80 +173,115 @@ async function reviewProject(panel: vscode.WebviewPanel, config: vscode.Workspac
   const batchSize = config.get<number>('reviewBatchSize', 5);
   const reviews: FileReview[] = [];
 
-  return await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: 'Reviewing Project Files',
-      cancellable: true,
-    },
-    async (progress, token) => {
-      try {
-        const files = await vscode.workspace.findFiles(
-          '**/*',
-          `{${config.get<string[]>('excludePatterns', ['**/node_modules/**', '**/.git/**']).join(',')}}`
-        );
+  return await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: 'Reviewing Project Files',
+    cancellable: true
+  }, async (progress, token) => {
+    try {
+      const files = await vscode.workspace.findFiles(
+        '**/*',
+        `{${config.get<string[]>('excludePatterns', ['**/node_modules/**', '**/.git/**']).join(',')}}`
+      );
 
-        if (files.length > maxFiles) {
-          return `Too many files (${files.length}). Max allowed: ${maxFiles}. Adjust 'llmcoderagent.maxFiles' in settings.`;
-        }
-
-        const totalFiles = files.length;
-        let processedFiles = 0;
-
-        progress.report({ message: `Found ${totalFiles} files to review` });
-
-        for (let i = 0; i < files.length && !token.isCancellationRequested; i += batchSize) {
-          const batch = files.slice(i, i + batchSize).filter(uri => shouldIncludeFile(uri, config));
-          const batchReviews = await Promise.all(batch.map(uri => reviewFile(uri, config)));
-          reviews.push(...batchReviews);
-
-          processedFiles += batch.length;
-          progress.report({
-            message: `Processed ${processedFiles}/${totalFiles} files`,
-            increment: (batch.length / totalFiles) * 100,
-          });
-        }
-
-        if (token.isCancellationRequested) {
-          return 'Project review cancelled.';
-        }
-
-        let summary = `Project Review Completed\n\nReviewed ${reviews.length} files:\n`;
-        for (const review of reviews) {
-          summary += `\n**${vscode.workspace.asRelativePath(review.uri)}**:\n${review.review}\n`;
-          if (review.suggestedChanges) {
-            const applied = await applyFileChanges(review.uri, review.suggestedChanges);
-            if (applied) {
-              summary += `Changes applied to ${vscode.workspace.asRelativePath(review.uri)}\n`;
-            }
-          }
-        }
-
-        outputChannel.appendLine(`Project review completed with ${reviews.length} files processed.`);
-        return summary;
-      } catch (error) {
-        const message = `Project review failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        outputChannel.appendLine(message);
-        handleError(error, panel);
-        return message;
+      if (files.length > maxFiles) {
+        return `Too many files (${files.length}). Max allowed: ${maxFiles}. Adjust settings.`;
       }
+
+      let processedFiles = 0;
+      const totalFiles = files.length;
+      progress.report({ message: `Found ${totalFiles} files` });
+
+      for (let i = 0; i < files.length && !token.isCancellationRequested; i += batchSize) {
+        const batch = files.slice(i, i + batchSize).filter(uri => shouldIncludeFile(uri, config));
+        const batchReviews = await Promise.all(batch.map(uri => reviewFile(uri, config)));
+        reviews.push(...batchReviews);
+        processedFiles += batch.length;
+        progress.report({ message: `Processed ${processedFiles}/${totalFiles}`, increment: (batch.length / totalFiles) * 100 });
+      }
+
+      if (token.isCancellationRequested) {
+        return 'Project review cancelled.';
+      }
+
+      let summary = `Project Review Completed\n\nReviewed ${reviews.length} files:\n`;
+      for (const review of reviews) {
+        summary += `\n**${vscode.workspace.asRelativePath(review.uri)}**:\n${review.review}\n`;
+        if (review.suggestedChanges) {
+          const applied = await applyFileChanges(review.uri, review.suggestedChanges);
+          if (applied) summary += `Changes applied to ${vscode.workspace.asRelativePath(review.uri)}\n`;
+        }
+      }
+
+      outputChannel.appendLine(`Project review completed.`);
+      return summary;
+    } catch (error) {
+      const msg = `Project review failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      outputChannel.appendLine(msg);
+      handleError(error, panel);
+      return msg;
     }
-  );
+  });
 }
 
 function handleError(error: unknown, panel: vscode.WebviewPanel) {
-  const message = error instanceof AxiosError
-    ? `API Error: ${error.response?.statusText || error.message}`
-    : error instanceof Error
-      ? error.message
-      : 'An unexpected error occurred';
-
+  const message = error instanceof AxiosError ? `API Error: ${error.response?.statusText || error.message}` : error instanceof Error ? error.message : 'Unexpected error';
   vscode.window.showErrorMessage(message);
   panel.webview.postMessage({
     type: 'response',
-    text: `Error: ${sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} })}`,
+    text: `Error: ${sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} })}`
   });
 }
+
+function getWebviewHtml(content: string): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>body{font-family:'Segoe UI',sans-serif;padding:1rem;background-color:#1e1e1e;color:#d4d4d4;}pre{background-color:#252526;padding:1rem;border-radius:6px;overflow-x:auto;}</style></head><body><h2>🔍 LLMCoderAgent Review Summary</h2><pre>${sanitizeHtml(content)}</pre></body></html>`;
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  outputChannel.appendLine('LLMCoderAgent activated ✅');
+
+  // Command: Open Chat / Full Project Review
+  const openChatCommand = vscode.commands.registerCommand('llmcoderagent.openChat', async () => {
+    try {
+      const panel = vscode.window.createWebviewPanel('llmcoderagent', 'LLMCoder Chat', vscode.ViewColumn.Beside, { enableScripts: true });
+      const config = vscode.workspace.getConfiguration('llmcoderagent');
+      const summary = await reviewProject(panel, config);
+      panel.webview.html = getWebviewHtml(summary);
+    } catch (error) {
+      const msg = `Activation failed: ${error instanceof Error ? error.message : String(error)}`;
+      outputChannel.appendLine(msg);
+      vscode.window.showErrorMessage(msg);
+    }
+  });
+
+  // Command: Review Entire Project (Duplicate of openChat, but separate command ID)
+  const reviewProjectCommand = vscode.commands.registerCommand('llmcoderagent.reviewProject', async () => {
+    const panel = vscode.window.createWebviewPanel('llmcoderagent', 'Project Review', vscode.ViewColumn.Beside, { enableScripts: true });
+    const config = vscode.workspace.getConfiguration('llmcoderagent');
+    const summary = await reviewProject(panel, config);
+    panel.webview.html = getWebviewHtml(summary);
+  });
+
+  // Command: Review Only the Active File
+  const reviewFileCommand = vscode.commands.registerCommand('llmcoderagent.reviewFile', async () => {
+    const config = vscode.workspace.getConfiguration('llmcoderagent');
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showErrorMessage('No active file to review.');
+      return;
+    }
+
+    const uri = editor.document.uri;
+    const review = await reviewFile(uri, config);
+
+    const panel = vscode.window.createWebviewPanel('llmcoderagent', 'File Review', vscode.ViewColumn.Beside, { enableScripts: true });
+    panel.webview.html = getWebviewHtml(`**${vscode.workspace.asRelativePath(review.uri)}**:\n${review.review}`);
+  });
+
+  // Register all commands
+  context.subscriptions.push(openChatCommand, reviewProjectCommand, reviewFileCommand);
+}
+
 
 export function deactivate() {
   outputChannel.appendLine('LLMCoderAgent deactivated');

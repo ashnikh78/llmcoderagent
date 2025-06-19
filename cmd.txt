@@ -11,11 +11,19 @@ code --install-extension llmcoderagent-0.0.1.vsix
 
 vsce login Dharnidhar
 vsce publish 
-vsce publish 0.0.2
+vsce publish 1.0.4
 vsce publish --pre-release
 
 npm run compile
 vsce package
-code --install-extension llmcoderagent-0.0.1.vsix --force
+code --install-extension llmcoderagent-1.0.7.vsix --force
 
 https://marketplace.visualstudio.com/manage/publishers/dharnidhar
+
+http://host.docker.internal:11434
+
+
+
+docker run -d --name flowise -p 3000:3000 flowiseai/flowise
+docker stop flowise
+http://host.docker.internal:11434

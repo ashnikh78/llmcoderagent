@@ -6,7 +6,7 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-const flowiseUrl = 'http://localhost:3000/api/v1/prediction/ccbfcde1-d3f3-40b2-9436-c3ba6b8a95a2';
+const flowiseUrl = 'http://localhost:3000/api/v1/prediction/cee111b6-eaf0-4b47-a6cb-4cdf77ec59da';
 
 rl.question('Ask your agent: ', async (question) => {
   try {
