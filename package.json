@@ -2,7 +2,7 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "publisher": "Dharnidhar",
   "engines": {
     "vscode": "^1.100.2"
