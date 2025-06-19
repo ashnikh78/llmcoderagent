@@ -1,5 +1,3 @@
-// --- VSCode Extension: LLMCoderAgent ---
-
 import * as vscode from 'vscode';
 import axios, { AxiosError } from 'axios';
 import { basename, extname } from 'path';
@@ -67,10 +65,7 @@ async function applyFileChanges(uri: vscode.Uri, newContent: string): Promise<bo
 
     const original = uri;
     const modified = vscode.Uri.parse(`untitled:${uri.fsPath}.suggested`);
-    const doc = await vscode.workspace.openTextDocument(modified);
-    const edit = new vscode.WorkspaceEdit();
-    edit.insert(modified, new vscode.Position(0, 0), newContent);
-    await vscode.workspace.applyEdit(edit);
+    await vscode.workspace.fs.writeFile(modified, new TextEncoder().encode(newContent));
 
     await vscode.commands.executeCommand('vscode.diff', original, modified, `${basename(uri.fsPath)}: Original vs Suggested`);
 
@@ -94,15 +89,29 @@ async function applyFileChanges(uri: vscode.Uri, newContent: string): Promise<bo
   }
 }
 
-async function getLLMResponse(prompt: string, config: vscode.WorkspaceConfiguration): Promise<string> {
+async function getLLMResponse(prompt: string, config: vscode.WorkspaceConfiguration, chatHistory: { role: string; content: string }[] = []): Promise<string> {
   try {
+    const baseUrl = config.get<string>('flowiseUrl', 'http://localhost:3000/api/v1/prediction');
+    const apiToken = config.get<string>('apiToken', '');
+    if (!apiToken) {
+      throw new Error('Flowise API token (flow ID) is required');
+    }
+    const url = `${baseUrl}/${apiToken}`;
+    outputChannel.appendLine(`Sending LLM request to: ${url}`);
+
+    // Combine chat history and current prompt into a single question
+    const conversation = chatHistory
+      .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+      .join('\n') + `\nUser: ${prompt}`;
+
     const response = await axios.post<{ text: string }>(
-      config.get('flowiseUrl', ''),
-      { question: prompt },
+      url,
+      {
+        question: conversation
+      },
       {
         headers: {
-          'Content-Type': 'application/json',
-          ...(config.get('apiToken') ? { Authorization: `Bearer ${config.get('apiToken')}` } : {})
+          'Content-Type': 'application/json'
         },
         timeout: config.get('apiTimeout', 30000)
       }
@@ -112,6 +121,7 @@ async function getLLMResponse(prompt: string, config: vscode.WorkspaceConfigurat
       allowedTags: [],
       allowedAttributes: {}
     });
+    outputChannel.appendLine(`LLM response received: ${sanitized.slice(0, 100)}...`);
     return sanitized || 'No response received from LLM';
   } catch (error) {
     const message = `Failed to fetch LLM response: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -136,7 +146,7 @@ async function reviewFile(uri: vscode.Uri, config: vscode.WorkspaceConfiguration
     };
   }
 
- const prompt = `Review the following file content and suggest improvements:
+  const prompt = `Review the following file content and suggest improvements:
 
 **File**: ${basename(uri.fsPath)}
 **Content**:
@@ -166,7 +176,9 @@ Provide a review and, if applicable, include a "Suggested changes:" section with
 
 async function reviewProject(panel: vscode.WebviewPanel, config: vscode.WorkspaceConfiguration): Promise<string> {
   if (!vscode.workspace.workspaceFolders) {
-    return 'No workspace folder open. Please open a project to review.';
+    const msg = 'No workspace folder open. Please open a project to review.';
+    panel.webview.html = getWebviewHtml(msg);
+    return msg;
   }
 
   const maxFiles = config.get<number>('maxFiles', 1000);
@@ -181,11 +193,14 @@ async function reviewProject(panel: vscode.WebviewPanel, config: vscode.Workspac
     try {
       const files = await vscode.workspace.findFiles(
         '**/*',
-        `{${config.get<string[]>('excludePatterns', ['**/node_modules/**', '**/.git/**']).join(',')}}`
+        `{${config.get<string[]>('excludePatterns', ['**/node_modules/**', '**/.git/**', '**/*.log', '**/*.lock']).join(',')}}`
       );
+      outputChannel.appendLine(`Found ${files.length} files: ${files.map(f => vscode.workspace.asRelativePath(f)).join(', ')}`);
 
       if (files.length > maxFiles) {
-        return `Too many files (${files.length}). Max allowed: ${maxFiles}. Adjust settings.`;
+        const msg = `Too many files (${files.length}). Max allowed: ${maxFiles}. Adjust settings.`;
+        panel.webview.html = getWebviewHtml(msg);
+        return msg;
       }
 
       let processedFiles = 0;
@@ -201,7 +216,9 @@ async function reviewProject(panel: vscode.WebviewPanel, config: vscode.Workspac
       }
 
       if (token.isCancellationRequested) {
-        return 'Project review cancelled.';
+        const msg = 'Project review cancelled.';
+        panel.webview.html = getWebviewHtml(msg);
+        return msg;
       }
 
       let summary = `Project Review Completed\n\nReviewed ${reviews.length} files:\n`;
@@ -214,6 +231,7 @@ async function reviewProject(panel: vscode.WebviewPanel, config: vscode.Workspac
       }
 
       outputChannel.appendLine(`Project review completed.`);
+      panel.webview.html = getWebviewHtml(summary);
       return summary;
     } catch (error) {
       const msg = `Project review failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -237,51 +255,215 @@ function getWebviewHtml(content: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><style>body{font-family:'Segoe UI',sans-serif;padding:1rem;background-color:#1e1e1e;color:#d4d4d4;}pre{background-color:#252526;padding:1rem;border-radius:6px;overflow-x:auto;}</style></head><body><h2>🔍 LLMCoderAgent Review Summary</h2><pre>${sanitizeHtml(content)}</pre></body></html>`;
 }
 
+function getChatWebviewHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+  <title>LLMCoder Chat</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 1rem;
+      background-color: #1e1e1e;
+      color: #d4d4d4;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      background-color: #252526;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .message {
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      border-radius: 4px;
+    }
+    .user {
+      background-color: #007acc;
+      align-self: flex-end;
+      margin-left: 20%;
+    }
+    .assistant {
+      background-color: #3c3c3c;
+      margin-right: 20%;
+    }
+    #input-container {
+      display: flex;
+      gap: 0.5rem;
+    }
+    #message-input {
+      flex: 1;
+      padding: 0.5rem;
+      background-color: #252526;
+      color: #d4d4d4;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      resize: none;
+    }
+    #send-button {
+      padding: 0.5rem 1rem;
+      background-color: #007acc;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #send-button:hover {
+      background-color: #005f99;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container"></div>
+  <div id="input-container">
+    <textarea id="message-input" rows="2" placeholder="Type your message..."></textarea>
+    <button id="send-button">Send</button>
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    const chatContainer = document.getElementById('chat-container');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+
+    function addMessage(content, isUser) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message ' + (isUser ? 'user' : 'assistant');
+      messageDiv.textContent = content;
+      chatContainer.appendChild(messageDiv);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    sendButton.addEventListener('click', () => {
+      const message = messageInput.value.trim();
+      if (message) {
+        addMessage(message, true);
+        vscode.postMessage({ command: 'sendMessage', text: message });
+        messageInput.value = '';
+      }
+    });
+
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendButton.click();
+      }
+    });
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (message.command === 'receiveMessage') {
+        addMessage(message.text, false);
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   outputChannel.appendLine('LLMCoderAgent activated ✅');
+  const config = vscode.workspace.getConfiguration('llmcoderagent');
+  if (!config.get('flowiseUrl') || !config.get('apiToken')) {
+    vscode.window.showErrorMessage('LLMCoderAgent: Please configure "llmcoderagent.flowiseUrl" and "llmcoderagent.apiToken" in settings.');
+    return;
+  }
 
-  // Command: Open Chat / Full Project Review
+  // Maintain chat history for conversational context
+  let chatHistory: { role: string; content: string }[] = [];
+
+  // Command: Open Interactive Chat
   const openChatCommand = vscode.commands.registerCommand('llmcoderagent.openChat', async () => {
+    outputChannel.appendLine('Executing llmcoderagent.openChat');
     try {
-      const panel = vscode.window.createWebviewPanel('llmcoderagent', 'LLMCoder Chat', vscode.ViewColumn.Beside, { enableScripts: true });
-      const config = vscode.workspace.getConfiguration('llmcoderagent');
-      const summary = await reviewProject(panel, config);
-      panel.webview.html = getWebviewHtml(summary);
+      const panel = vscode.window.createWebviewPanel(
+        'llmcoderagentChat',
+        'LLMCoder Chat',
+        vscode.ViewColumn.Beside,
+        { enableScripts: true }
+      );
+      panel.webview.html = getChatWebviewHtml();
+
+      // Handle messages from the webview
+      panel.webview.onDidReceiveMessage(
+        async (message) => {
+          if (message.command === 'sendMessage') {
+            try {
+              const userMessage = message.text;
+              const response = await getLLMResponse(userMessage, config, chatHistory);
+              chatHistory.push({ role: 'user', content: userMessage });
+              chatHistory.push({ role: 'assistant', content: response });
+              // Limit history to prevent excessive context
+              if (chatHistory.length > 20) {
+                chatHistory = chatHistory.slice(-20);
+              }
+              panel.webview.postMessage({ command: 'receiveMessage', text: response });
+            } catch (error) {
+              const msg = `Chat failed: ${error instanceof Error ? error.message : String(error)}`;
+              outputChannel.appendLine(msg);
+              panel.webview.postMessage({ command: 'receiveMessage', text: msg });
+            }
+          }
+        },
+        undefined,
+        context.subscriptions
+      );
+
+      // Reset chat history when the panel is closed
+      panel.onDidDispose(() => {
+        chatHistory = [];
+        outputChannel.appendLine('Chat panel disposed, history reset.');
+      }, undefined, context.subscriptions);
     } catch (error) {
-      const msg = `Activation failed: ${error instanceof Error ? error.message : String(error)}`;
+      const msg = `Open Chat failed: ${error instanceof Error ? error.message : String(error)}`;
       outputChannel.appendLine(msg);
       vscode.window.showErrorMessage(msg);
     }
   });
 
-  // Command: Review Entire Project (Duplicate of openChat, but separate command ID)
+  // Command: Review Entire Project
   const reviewProjectCommand = vscode.commands.registerCommand('llmcoderagent.reviewProject', async () => {
-    const panel = vscode.window.createWebviewPanel('llmcoderagent', 'Project Review', vscode.ViewColumn.Beside, { enableScripts: true });
-    const config = vscode.workspace.getConfiguration('llmcoderagent');
-    const summary = await reviewProject(panel, config);
-    panel.webview.html = getWebviewHtml(summary);
+    outputChannel.appendLine('Executing llmcoderagent.reviewProject');
+    try {
+      const panel = vscode.window.createWebviewPanel('llmcoderagent', 'Project Review', vscode.ViewColumn.Beside, { enableScripts: true });
+      const summary = await reviewProject(panel, config);
+      panel.webview.html = getWebviewHtml(summary);
+    } catch (error) {
+      const msg = `Review Project failed: ${error instanceof Error ? error.message : String(error)}`;
+      outputChannel.appendLine(msg);
+      vscode.window.showErrorMessage(msg);
+    }
   });
 
   // Command: Review Only the Active File
   const reviewFileCommand = vscode.commands.registerCommand('llmcoderagent.reviewFile', async () => {
-    const config = vscode.workspace.getConfiguration('llmcoderagent');
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active file to review.');
-      return;
+    outputChannel.appendLine('Executing llmcoderagent.reviewFile');
+    try {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage('No active file to review.');
+        return;
+      }
+      const uri = editor.document.uri;
+      const review = await reviewFile(uri, config);
+      const panel = vscode.window.createWebviewPanel('llmcoderagent', 'File Review', vscode.ViewColumn.Beside, { enableScripts: true });
+      panel.webview.html = getWebviewHtml(`**${vscode.workspace.asRelativePath(review.uri)}**:\n${review.review}`);
+    } catch (error) {
+      const msg = `Review File failed: ${error instanceof Error ? error.message : String(error)}`;
+      outputChannel.appendLine(msg);
+      vscode.window.showErrorMessage(msg);
     }
-
-    const uri = editor.document.uri;
-    const review = await reviewFile(uri, config);
-
-    const panel = vscode.window.createWebviewPanel('llmcoderagent', 'File Review', vscode.ViewColumn.Beside, { enableScripts: true });
-    panel.webview.html = getWebviewHtml(`**${vscode.workspace.asRelativePath(review.uri)}**:\n${review.review}`);
   });
 
-  // Register all commands
   context.subscriptions.push(openChatCommand, reviewProjectCommand, reviewFileCommand);
 }
-
 
 export function deactivate() {
   outputChannel.appendLine('LLMCoderAgent deactivated');
