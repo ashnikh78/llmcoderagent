@@ -8,15 +8,18 @@ Token
 
 vsce package
 code --install-extension llmcoderagent-0.0.1.vsix
-
+npm install -g @vscode/vsce
+vsce package
 vsce login Dharnidhar
 vsce publish 
 vsce publish 1.0.4
 vsce publish --pre-release
-
+npx vsce package --allow-star-activation
+npm version patch
+npx vsce publish
 npm run compile
 vsce package
-code --install-extension llmcoderagent-1.0.7.vsix --force
+code --install-extension llmcoderagent-1.0.8.vsix --force
 
 https://marketplace.visualstudio.com/manage/publishers/dharnidhar
 
