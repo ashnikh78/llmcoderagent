@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": ["ES2022"],
     "outDir": "out",
     "rootDir": "src",
     "strict": true,
@@ -10,12 +10,15 @@
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
     "skipLibCheck": true,
-    "types": ["node", "vscode", "mocha", "jest"]
+    "declaration": true,
+    "types": ["node", "vscode"],
+    "sourceMap": true
   },
   "include": ["src/**/*.ts"],
   "exclude": [
     "node_modules",
     ".vscode-test",
+    "out",
     "test",
     "suite"
   ]

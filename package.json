@@ -2,10 +2,10 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
-  "version": "1.0.13",
+  "version": "1.0.18",
   "publisher": "Dharnidhar",
   "engines": {
-    "vscode": "1.101.1"
+    "vscode": "^1.80.0"
   },
   "repository": {
     "type": "git",
@@ -32,13 +32,14 @@
     "onCommand:llmcoderagent.reviewFile"
   ],
   "main": "./out/extension.js",
+  "typings": "./out/extension.d.ts",
   "contributes": {
     "configuration": {
       "title": "LLMCoder Agent",
       "properties": {
         "llmcoderagent.flowiseUrl": {
           "type": "string",
-          "default": "http://localhost:3000/api/v1/prediction/7f5daedc-cca8-44fb-bce3-1c971096ef72",
+          "default": "http://localhost:3000/api/v1/prediction/flow_id",
           "description": "URL of the Flowise API prediction endpoint (use HTTPS for production)."
         },
         "llmcoderagent.apiToken": {
@@ -49,16 +50,16 @@
         "llmcoderagent.apiTimeout": {
           "type": "number",
           "default": 30000,
-          "description": "Timeout for Flowise API requests in milliseconds.",
           "minimum": 5000,
-          "maximum": 60000
+          "maximum": 60000,
+          "description": "Timeout for Flowise API requests in milliseconds."
         },
         "llmcoderagent.messageHistoryLimit": {
           "type": "number",
           "default": 100,
-          "description": "Maximum number of messages to retain in chat history.",
           "minimum": 10,
-          "maximum": 500
+          "maximum": 500,
+          "description": "Maximum number of messages to retain in chat history."
         },
         "llmcoderagent.webviewTitle": {
           "type": "string",
@@ -69,15 +70,15 @@
         "llmcoderagent.statusBarTimeout": {
           "type": "number",
           "default": 2000,
-          "description": "Duration of status bar messages in milliseconds.",
           "minimum": 1000,
-          "maximum": 5000
+          "maximum": 5000,
+          "description": "Duration of status bar messages in milliseconds."
         },
         "llmcoderagent.inputPlaceholder": {
           "type": "string",
           "default": "Ask the LLM something, type 'review project', or 'review file'...",
-          "description": "Placeholder text for the chat input field.",
-          "maxLength": 100
+          "maxLength": 100,
+          "description": "Placeholder text for the chat input field."
         },
         "llmcoderagent.autoScroll": {
           "type": "boolean",
@@ -91,19 +92,13 @@
         },
         "llmcoderagent.includePatterns": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [
-            "**/*.{ts,js,py,md}"
-          ],
+          "items": { "type": "string" },
+          "default": ["**/*.{ts,js,py,md}"],
           "description": "Glob patterns for files to include in project review."
         },
         "llmcoderagent.excludePatterns": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "default": [
             "**/node_modules/**",
             "**/.git/**",
@@ -117,23 +112,23 @@
         "llmcoderagent.maxFileSize": {
           "type": "number",
           "default": 100000,
-          "description": "Maximum file size (in bytes) to review.",
           "minimum": 1000,
-          "maximum": 1000000
+          "maximum": 1000000,
+          "description": "Maximum file size (in bytes) to review."
         },
         "llmcoderagent.maxFiles": {
           "type": "number",
           "default": 1000,
-          "description": "Maximum number of files to review in a project.",
           "minimum": 10,
-          "maximum": 10000
+          "maximum": 10000,
+          "description": "Maximum number of files to review in a project."
         },
         "llmcoderagent.reviewBatchSize": {
           "type": "number",
           "default": 5,
-          "description": "Number of files to process in each batch during review.",
           "minimum": 1,
-          "maximum": 20
+          "maximum": 20,
+          "description": "Number of files to process in each batch during review."
         },
         "llmcoderagent.autoApplyChanges": {
           "type": "boolean",
@@ -178,8 +173,7 @@
       ],
       "commandPalette": [
         {
-          "command": "llmcoderagent.openChat",
-          "when": "true"
+          "command": "llmcoderagent.openChat"
         },
         {
           "command": "llmcoderagent.reviewFile",
@@ -195,31 +189,26 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint && node ./out/test/runTest.js",
+    "watch": "tsc --watch -p ./",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "node ./out/test/runTest.js"
   },
   "files": [
-    "media/**",
-    "out/**",
-    "images/**"
+    "out/",
+    "media/",
+    "images/",
+    "README.md",
+    "LICENSE"
   ],
   "devDependencies": {
-    "@angular/language-service": "^20.0.4",
-    "@types/jest": "^30.0.0",
     "@types/minimatch": "^5.1.2",
-    "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.1",
     "@types/sanitize-html": "^2.16.0",
     "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.29.0",
-    "jest": "^30.0.1",
-    "minimatch": "^10.0.3",
     "mocha": "^11.7.0",
     "typescript": "^5.8.3",
     "vscode": "^1.1.37"
@@ -227,5 +216,8 @@
   "dependencies": {
     "axios": "^1.10.0",
     "sanitize-html": "^2.17.0"
+  },
+  "bugs": {
+    "url": "https://github.com/ashnikh78/llmcoderagent/issues"
   }
 }
