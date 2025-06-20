@@ -2,7 +2,7 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "publisher": "Dharnidhar",
   "engines": {
     "vscode": "^1.80.0"
@@ -92,13 +92,19 @@
         },
         "llmcoderagent.includePatterns": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["**/*.{ts,js,py,md}"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.{ts,js,py,md}"
+          ],
           "description": "Glob patterns for files to include in project review."
         },
         "llmcoderagent.excludePatterns": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [
             "**/node_modules/**",
             "**/.git/**",
@@ -208,14 +214,15 @@
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
     "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
     "eslint": "^9.29.0",
     "mocha": "^11.7.0",
-    "typescript": "^5.8.3",
-    "vscode": "^1.1.37"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "axios": "^1.10.0",
-    "sanitize-html": "^2.17.0"
+    "sanitize-html": "^2.17.0",
+    "minimatch": "^9.0.3"
   },
   "bugs": {
     "url": "https://github.com/ashnikh78/llmcoderagent/issues"
