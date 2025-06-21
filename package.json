@@ -2,7 +2,7 @@
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
   "description": "Interact with a local or remote Flowise + Ollama or OpenAI LLM to review, refactor, explain, and generate code in VS Code with real-time diagnostics",
-  "version": "1.0.29",
+  "version": "1.0.31",
   "publisher": "Dharnidhar",
   "engines": {
     "vscode": "^1.94.0"

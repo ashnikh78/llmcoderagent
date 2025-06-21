@@ -79,6 +79,9 @@ class FlowiseProvider implements LLMProvider {
     private config: Config;
 
     constructor(url: string, token: string, config: Config) {
+        if (!url.startsWith("https://") && !url.includes("localhost")) {
+            throw this.handleError("Flowise URL must use HTTPS for non-localhost environments.");
+        }
         this.url = url;
         this.token = this.validateToken(token);
         this.config = config;
@@ -100,7 +103,8 @@ class FlowiseProvider implements LLMProvider {
         } catch (error) {
             const err = error as AxiosError;
             if (err.response?.status === 401) {
-                throw this.handleError("Invalid Flowise API token. Please update your token in settings.");
+                await vscode.commands.executeCommand("llmcoderagent.configureLLM");
+                throw this.handleError("Invalid Flowise API token. Please reconfigure using 'configure llm' command.");
             } else if (err.code === "ECONNREFUSED") {
                 throw this.handleError(`Flowise server unreachable at ${this.url}. Check the URL and server status.`);
             }
@@ -129,6 +133,12 @@ class FlowiseProvider implements LLMProvider {
 
     private handleError(msg: string): Error {
         log(msg, "ERROR");
+        const action = `Flowise error: ${msg}. Check settings (Ctrl+, search 'llmcoderagent') or Flowise server status.`;
+        vscode.window.showErrorMessage(action, "Open Settings").then((choice) => {
+            if (choice === "Open Settings") {
+                vscode.commands.executeCommand("workbench.action.openSettings", "llmcoderagent");
+            }
+        });
         return new Error(msg);
     }
 }
@@ -255,15 +265,18 @@ const handleError = (msg: string, showMsg = true): Error => {
 
 const getConfig = (): Config => {
     const cfg = vscode.workspace.getConfiguration("llmcoderagent");
+    const defaultReviewPrompt = cfg.get<string>("llmProvider") === "flowise"
+        ? `You are a Flowise-powered code reviewer. Analyze the following code:\n\`\`\`\n{content}\n\`\`\`\nProvide a markdown review with sections: Code Quality, Issues (with line numbers), Performance, Security, and Suggested Changes (in a code block).`
+        : `You are an expert code reviewer. Review the following code from {filename}:\n\`\`\`\n{content}\n\`\`\`\nProvide a detailed review in markdown format with the following sections:\n1. **Code Quality**: Assess readability, maintainability, and adherence to best practices.\n2. **Potential Issues**: Identify bugs or logical errors with specific line numbers.\n3. **Performance**: Suggest optimizations for efficiency.\n4. **Security**: Highlight potential vulnerabilities.\n5. **Suggested Changes**: Provide a code block with recommended changes.\n6. **Issues List**: Summarize issues in a bullet list with line numbers and severity (High/Medium/Low).\nEnsure the review is concise, actionable, and includes specific examples.`;
     return {
         llmProvider: cfg.get<string>("llmProvider", "ollama"),
-        flowiseUrl: cfg.get<string>("flowiseUrl", "http://localhost:3000/api/v1/prediction"),
+        flowiseUrl: cfg.get<string>("flowiseUrl", "https://your-flowise-server.com/api/v1/prediction"),
         flowiseToken: cfg.get<string>("flowiseToken"),
         openaiModel: cfg.get<string>("openaiModel", "gpt-3.5-turbo"),
         ollamaModel: cfg.get<string>("ollamaModel", "deepseek-coder:6.7b-base"),
-        apiTimeout: cfg.get<number>("apiTimeout", 30000),
-        apiMaxRetries: cfg.get<number>("apiMaxRetries", 3),
-        apiRetryDelay: cfg.get<number>("apiRetryDelay", 1000),
+        apiTimeout: cfg.get<number>("apiTimeout", 60000), // Increased to 60 seconds
+        apiMaxRetries: cfg.get<number>("apiMaxRetries", 5), // Increased to 5 retries
+        apiRetryDelay: cfg.get<number>("apiRetryDelay", 2000), // Increased to 2 seconds
         maxFiles: cfg.get<number>("maxFiles", 1000),
         reviewBatchSize: cfg.get<number>("reviewBatchSize", 5),
         maxFileSize: cfg.get<number>("maxFileSize", 100000),
@@ -279,7 +292,7 @@ const getConfig = (): Config => {
             "**/*.lock",
             "**/*.bak.*",
         ]),
-        reviewPrompt: cfg.get<string>("reviewPrompt", ""),
+        reviewPrompt: cfg.get<string>("reviewPrompt", defaultReviewPrompt),
         explainPrompt: cfg.get<string>("explainPrompt", ""),
         generatePrompt: cfg.get<string>("generatePrompt", ""),
         webviewTitle: cfg.get<string>("webviewTitle", "LLMCoder Chat"),
@@ -450,8 +463,7 @@ const reviewFile = async (uri: vscode.Uri, config: Config, projectContext?: Map<
             .join("\n")
         : "";
 
-    const defaultReviewPrompt = `You are an expert code reviewer. Review the following code from ${vscode.workspace.asRelativePath(uri)}:\n\`\`\`\n${content}\n\`\`\`\n${relatedContent.join("\n")}\n\n**Project Context**:\n${projectContextSummary || "No additional context available."}\nProvide a detailed review in markdown format with the following sections:\n1. **Code Quality**: Assess readability, maintainability, and adherence to best practices.\n2. **Potential Issues**: Identify bugs or logical errors with specific line numbers.\n3. **Performance**: Suggest optimizations for efficiency.\n4. **Security**: Highlight potential vulnerabilities.\n5. **Suggested Changes**: Provide a code block with recommended changes.\n6. **Issues List**: Summarize issues in a bullet list with line numbers and severity (High/Medium/Low).\nEnsure the review is concise, actionable, and includes specific examples.`;
-    const prompt = config.reviewPrompt || defaultReviewPrompt;
+    const prompt = config.reviewPrompt.replace("{filename}", vscode.workspace.asRelativePath(uri)).replace("{content}", content);
     const review = await getLLMResponse(prompt, config, [], provider);
 
     let suggestedChanges: string | undefined;
@@ -629,7 +641,7 @@ const getChatWebviewHtml = (config: Config): string => {
     function addMessage(text, isUser) {
       const div = document.createElement('div');
       div.className = 'message ' + (isUser ? 'user' : 'assistant');
-      const sanitizedText = text.includes('<pre>') ? text : '<pre><code>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>';
+      const sanitizedText = text.includes('<pre>') ? text : '<pre><code>' + text.replace(/</g, '<').replace(/>/g, '>') + '</code></pre>';
       div.innerHTML = sanitizedText;
       chatContainer.appendChild(div);
       Prism.highlightAll();
@@ -1048,6 +1060,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     try {
         const provider = await getLLMProvider(config, context);
+        if (!(await provider.testConnection())) {
+            throw handleError(`${provider.getName()} connection test failed. Run 'configure llm' to update settings.`);
+        }
         realTimeManager = new RealTimeCodeAccessManager(context, config);
 
         const subscriptions = [
@@ -1221,7 +1236,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             vscode.commands.registerCommand("llmcoderagent.configureLLM", async () => {
                 try {
                     const secrets = context.secrets;
-                    const providerChoice = await vscode.window.showQuickPick(["flowise", "openai", "ollama"], {
+                    const providerChoice = await vscode.window.showQuickPick(["flowise", "openai", "ollemba"], {
                         placeHolder: "Select an LLM provider to configure",
                     });
                     if (!providerChoice) return;
@@ -1251,7 +1266,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             if (await provider.testConnection()) {
                                 vscode.window.showInformationMessage("Flowise configuration successful!");
                             } else {
-                                throw handleError("Flowise connection test failed");
+                                throw handleError("Flowise connection test failed. Please verify URL and token.");
                             }
                         }
                     } else if (providerChoice === "openai") {
