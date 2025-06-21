@@ -1,16 +1,17 @@
 {
   "name": "llmcoderagent",
   "displayName": "LLMCoderAgent",
-  "description": "Interact with a local or remote Flowise + Ollama LLM to review and modify code in VS Code",
-  "version": "1.0.19",
+  "description": "Interact with a local or remote Flowise + Ollama or OpenAI LLM to review, refactor, explain, and generate code in VS Code with real-time diagnostics",
+  "version": "1.0.29",
   "publisher": "Dharnidhar",
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.94.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/ashnikh78/llmcoderagent.git"
   },
+  "homepage": "https://github.com/ashnikh78/llmcoderagent",
   "license": "MIT",
   "icon": "images/icon.png",
   "categories": [
@@ -23,36 +24,66 @@
     "LLM",
     "Flowise",
     "Ollama",
+    "OpenAI",
     "code review",
-    "coding assistant"
+    "coding assistant",
+    "real-time diagnostics",
+    "code generation",
+    "git diff review"
   ],
   "activationEvents": [
     "onCommand:llmcoderagent.openChat",
     "onCommand:llmcoderagent.reviewProject",
-    "onCommand:llmcoderagent.reviewFile"
+    "onCommand:llmcoderagent.reviewFile",
+    "onCommand:llmcoderagent.refactorFile",
+    "onCommand:llmcoderagent.reviewSelection",
+    "onCommand:llmcoderagent.explainCode",
+    "onCommand:llmcoderagent.applyQuickFix",
+    "onCommand:llmcoderagent.toggleRealTime",
+    "onCommand:llmcoderagent.generateCode",
+    "onCommand:llmcoderagent.reviewGitDiff"
   ],
   "main": "./out/extension.js",
-  "typings": "./out/extension.d.ts",
   "contributes": {
     "configuration": {
-      "title": "LLMCoder Agent",
+      "title": "LLMCoderAgent",
       "properties": {
+        "llmcoderagent.llmProvider": {
+          "type": "string",
+          "enum": ["flowise", "openai"],
+          "default": "flowise",
+          "description": "Select LLM provider (Flowise or OpenAI)."
+        },
         "llmcoderagent.flowiseUrl": {
           "type": "string",
-          "default": "http://localhost:3000/api/v1/prediction/flow_id",
+          "default": "http://localhost:3000/api/v1/prediction",
           "description": "URL of the Flowise API prediction endpoint (use HTTPS for production)."
         },
-        "llmcoderagent.apiToken": {
+        "llmcoderagent.openaiModel": {
           "type": "string",
-          "default": "",
-          "description": "Authentication token for the Flowise API (optional)."
+          "default": "gpt-3.5-turbo",
+          "description": "OpenAI model to use (e.g., gpt-3.5-turbo, gpt-4)."
         },
         "llmcoderagent.apiTimeout": {
           "type": "number",
           "default": 30000,
           "minimum": 5000,
           "maximum": 60000,
-          "description": "Timeout for Flowise API requests in milliseconds."
+          "description": "Timeout for API requests in milliseconds."
+        },
+        "llmcoderagent.apiMaxRetries": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum number of retries for failed API requests."
+        },
+        "llmcoderagent.apiRetryDelay": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 500,
+          "maximum": 5000,
+          "description": "Base delay between API retries in milliseconds."
         },
         "llmcoderagent.messageHistoryLimit": {
           "type": "number",
@@ -76,7 +107,7 @@
         },
         "llmcoderagent.inputPlaceholder": {
           "type": "string",
-          "default": "Ask the LLM something, type 'review project', or 'review file'...",
+          "default": "Ask the LLM something, type 'review project', 'generate code', or 'help'...",
           "maxLength": 100,
           "description": "Placeholder text for the chat input field."
         },
@@ -111,7 +142,8 @@
             "**/dist/**",
             "**/build/**",
             "**/*.log",
-            "**/*.lock"
+            "**/*.lock",
+            "**/*.bak.*"
           ],
           "description": "Glob patterns for files to exclude from project review."
         },
@@ -140,6 +172,33 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically apply suggested changes to files (use with caution)."
+        },
+        "llmcoderagent.reviewPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Custom prompt for code reviews, overriding the default instructions."
+        },
+        "llmcoderagent.explainPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Custom prompt for code explanations."
+        },
+        "llmcoderagent.generatePrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Custom prompt for code generation."
+        },
+        "llmcoderagent.realTimeDiagnostics": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable real-time diagnostics and code reviews on file changes."
+        },
+        "llmcoderagent.realTimeDebounceMs": {
+          "type": "number",
+          "default": 500,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Debounce delay for real-time file changes in milliseconds."
         }
       }
     },
@@ -158,13 +217,48 @@
         "command": "llmcoderagent.reviewFile",
         "title": "📖 Review Current File with LLMCoder",
         "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.refactorFile",
+        "title": "🔧 Refactor File with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.reviewSelection",
+        "title": "🔍 Review Selection with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.explainCode",
+        "title": "📚 Explain Code with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.applyQuickFix",
+        "title": "⚙️ Apply Quick Fix with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.toggleRealTime",
+        "title": "⏱️ Toggle Real-Time Code Access",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.generateCode",
+        "title": "✨ Generate Code with LLMCoder",
+        "category": "LLMCoder"
+      },
+      {
+        "command": "llmcoderagent.reviewGitDiff",
+        "title": "🔎 Review Git Diff with LLMCoder",
+        "category": "LLMCoder"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "llmcoderagent.openChat",
-          "when": "editorHasSelection",
+          "when": "editorTextFocus",
           "group": "LLMCoder@1"
         },
         {
@@ -174,7 +268,33 @@
         },
         {
           "command": "llmcoderagent.reviewProject",
+          "when": "workspaceFolderCount > 0",
           "group": "LLMCoder@3"
+        },
+        {
+          "command": "llmcoderagent.reviewSelection",
+          "when": "editorHasSelection",
+          "group": "LLMCoder@4"
+        },
+        {
+          "command": "llmcoderagent.explainCode",
+          "when": "editorTextFocus",
+          "group": "LLMCoder@5"
+        },
+        {
+          "command": "llmcoderagent.toggleRealTime",
+          "when": "editorTextFocus",
+          "group": "LLMCoder@6"
+        },
+        {
+          "command": "llmcoderagent.generateCode",
+          "when": "editorTextFocus",
+          "group": "LLMCoder@7"
+        },
+        {
+          "command": "llmcoderagent.reviewGitDiff",
+          "when": "workspaceFolderCount > 0",
+          "group": "LLMCoder@8"
         }
       ],
       "commandPalette": [
@@ -187,6 +307,33 @@
         },
         {
           "command": "llmcoderagent.reviewProject",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "llmcoderagent.refactorFile",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "llmcoderagent.reviewSelection",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "llmcoderagent.explainCode",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "llmcoderagent.applyQuickFix",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "llmcoderagent.toggleRealTime"
+        },
+        {
+          "command": "llmcoderagent.generateCode",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "llmcoderagent.reviewGitDiff",
           "when": "workspaceFolderCount > 0"
         }
       ]
@@ -201,28 +348,27 @@
   },
   "files": [
     "out/",
-    "media/",
     "images/",
     "README.md",
     "LICENSE"
   ],
   "devDependencies": {
     "@types/minimatch": "^5.1.2",
-    "@types/node": "^20.19.1",
-    "@types/sanitize-html": "^2.16.0",
-    "@types/vscode": "^1.80.0",
-    "@typescript-eslint/eslint-plugin": "^8.34.1",
-    "@typescript-eslint/parser": "^8.34.1",
-    "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
-    "eslint": "^9.29.0",
-    "mocha": "^11.7.0",
-    "typescript": "^5.8.3"
+    "@types/node": "^20.14.8",
+    "@types/sanitize-html": "^2.11.0",
+    "@types/vscode": "^1.94.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.1",
+    "@typescript-eslint/parser": "^7.13.1",
+    "@vscode/test-cli": "^0.0.9",
+    "@vscode/test-electron": "^2.4.0",
+    "eslint": "^8.57.0",
+    "mocha": "^10.4.0",
+    "typescript": "^5.6.2"
   },
   "dependencies": {
-    "axios": "^1.10.0",
-    "sanitize-html": "^2.17.0",
-    "minimatch": "^9.0.3"
+    "axios": "^1.7.7",
+    "minimatch": "^9.0.5",
+    "sanitize-html": "^2.13.0"
   },
   "bugs": {
     "url": "https://github.com/ashnikh78/llmcoderagent/issues"
